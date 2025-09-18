@@ -1,25 +1,43 @@
 package com.example.demo.model;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+@Schema(description = "Payment entity representing a payment transaction")
 public class Payment {
+    @Schema(description = "Payment unique identifier", example = "pay_123456789")
     private String id;
+    
+    @Schema(description = "User identifier who initiated the payment", example = "user123")
     private String userId;
+    
+    @Schema(description = "Merchant identifier receiving the payment", example = "merchant456")
     private String merchantId;
+    
+    @Schema(description = "Payment amount", example = "99.99")
     private BigDecimal amount;
+    
+    @Schema(description = "Currency code", example = "USD")
     private String currency;
+    
+    @Schema(description = "Current payment status", example = "PENDING")
     private PaymentStatus status;
+    
+    @Schema(description = "Payment description", example = "Product purchase")
     private String description;
     
+    @Schema(description = "Payment creation timestamp", example = "2024-01-15 10:30:00")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createdAt;
     
+    @Schema(description = "Payment processing completion timestamp", example = "2024-01-15 10:30:45")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime processedAt;
     
+    @Schema(description = "Error message if payment failed", example = "Insufficient funds")
     private String errorMessage;
 
     public Payment() {

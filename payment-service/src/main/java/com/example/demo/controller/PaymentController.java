@@ -7,6 +7,14 @@ import com.example.demo.model.PaymentStatus;
 import com.example.demo.service.PaymentProducerService;
 import com.example.demo.service.PaymentStorageService;
 import com.example.demo.service.WebSocketNotificationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 @RestController
 @RequestMapping("/api/payments")
 @CrossOrigin(origins = "*")
+@Tag(name = "Payment Controller", description = "Main payment processing endpoints with real-time updates")
 public class PaymentController {
     
     private static final Logger logger = LoggerFactory.getLogger(PaymentController.class);
@@ -37,7 +46,61 @@ public class PaymentController {
     private WebSocketNotificationService webSocketNotificationService;
 
     @PostMapping
-    public ResponseEntity<PaymentResponse> createPayment(@Valid @RequestBody PaymentRequest paymentRequest) {
+    @Operation(
+        summary = "Create a new payment",
+        description = "Initiates a new payment request with immediate response and asynchronous processing via Kafka. Real-time status updates are sent via WebSocket.",
+        tags = {"Payment Processing"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "201", 
+            description = "Payment created successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = PaymentResponse.class),
+                examples = @ExampleObject(
+                    name = "Successful Payment Creation",
+                    value = """
+                    {
+                        "success": true,
+                        "message": "Payment request received successfully",
+                        "payment": {
+                            "id": "pay_123456789",
+                            "userId": "user123",
+                            "merchantId": "merchant456",
+                            "amount": 99.99,
+                            "currency": "USD",
+                            "description": "Product purchase",
+                            "status": "PENDING",
+                            "createdAt": "2024-01-15T10:30:00Z"
+                        }
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(
+            responseCode = "400", 
+            description = "Invalid payment request",
+            content = @Content(
+                mediaType = "application/json",
+                examples = @ExampleObject(
+                    name = "Validation Error",
+                    value = """
+                    {
+                        "success": false,
+                        "message": "Validation failed",
+                        "errors": ["Amount must be greater than 0", "User ID is required"]
+                    }
+                    """
+                )
+            )
+        ),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    public ResponseEntity<PaymentResponse> createPayment(
+        @Parameter(description = "Payment request details", required = true)
+        @Valid @RequestBody PaymentRequest paymentRequest) {
         try {
             logger.info("Received payment request for user {} to merchant {}", 
                     paymentRequest.getUserId(), paymentRequest.getMerchantId());
@@ -92,12 +155,51 @@ public class PaymentController {
     }
 
     @GetMapping("/health")
+    @Operation(
+        summary = "Health check",
+        description = "Returns the health status of the payment service",
+        tags = {"System"}
+    )
+    @ApiResponse(responseCode = "200", description = "Service is healthy")
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("Payment service is running");
     }
 
     @GetMapping("/status/{paymentId}")
-    public ResponseEntity<PaymentResponse> getPaymentStatus(@PathVariable String paymentId) {
+    @Operation(
+        summary = "Get payment status",
+        description = "Retrieves the current status and details of a specific payment by ID",
+        tags = {"Payment Inquiry"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200", 
+            description = "Payment status retrieved successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = PaymentResponse.class)
+            )
+        ),
+        @ApiResponse(
+            responseCode = "404", 
+            description = "Payment not found",
+            content = @Content(
+                mediaType = "application/json",
+                examples = @ExampleObject(
+                    name = "Payment Not Found",
+                    value = """
+                    {
+                        "success": false,
+                        "message": "Payment not found with ID: pay_123456789"
+                    }
+                    """
+                )
+            )
+        )
+    })
+    public ResponseEntity<PaymentResponse> getPaymentStatus(
+        @Parameter(description = "Payment ID", required = true, example = "pay_123456789")
+        @PathVariable String paymentId) {
         Optional<Payment> payment = paymentStorageService.getPaymentById(paymentId);
         if (payment.isPresent()) {
             PaymentResponse response = new PaymentResponse(
@@ -120,8 +222,25 @@ public class PaymentController {
      * Get all payments with optional pagination
      */
     @GetMapping
+    @Operation(
+        summary = "Get all payments",
+        description = "Retrieves a paginated list of all payments in the system",
+        tags = {"Payment Inquiry"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(
+            responseCode = "200", 
+            description = "Payments retrieved successfully",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = Payment[].class)
+            )
+        )
+    })
     public ResponseEntity<List<Payment>> getAllPayments(
+            @Parameter(description = "Page number (0-based)", example = "0")
             @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size", example = "10")
             @RequestParam(defaultValue = "10") int size) {
         try {
             List<Payment> payments = paymentStorageService.getPayments(page, size);
@@ -191,6 +310,30 @@ public class PaymentController {
      * Get payment statistics
      */
     @GetMapping("/stats")
+    @Operation(
+        summary = "Get payment statistics",
+        description = "Retrieves comprehensive payment statistics including counts by status",
+        tags = {"Analytics"}
+    )
+    @ApiResponse(
+        responseCode = "200", 
+        description = "Payment statistics retrieved successfully",
+        content = @Content(
+            mediaType = "application/json",
+            examples = @ExampleObject(
+                name = "Payment Statistics",
+                value = """
+                {
+                    "totalPayments": 1250,
+                    "pendingPayments": 45,
+                    "processingPayments": 12,
+                    "completedPayments": 1180,
+                    "failedPayments": 13
+                }
+                """
+            )
+        )
+    )
     public ResponseEntity<Object> getPaymentStats() {
         try {
             long totalPayments = paymentStorageService.getTotalPaymentCount();
