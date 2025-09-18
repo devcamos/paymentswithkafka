@@ -1,0 +1,6 @@
+{
+  "id": null,
+  "status": "FAILED",
+  "message": "Failed to create payment: Test error message",
+  "timestamp": "2025-09-18T14:00:00"
+}

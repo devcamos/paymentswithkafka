@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment System - Non-Blocking Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        .payment-form {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            border: 2px solid #e9ecef;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            width: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn.loading {
+            position: relative;
+            color: transparent;
+        }
+
+        .btn.loading::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            top: 50%;
+            left: 50%;
+            margin-left: -10px;
+            margin-top: -10px;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-panel {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            border: 2px solid #e9ecef;
+        }
+
+        .status-panel h3 {
+            margin-bottom: 20px;
+            color: #495057;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .status-processing {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-failed {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-pending .status-dot {
+            background: #ffc107;
+        }
+
+        .status-processing .status-dot {
+            background: #17a2b8;
+        }
+
+        .status-completed .status-dot {
+            background: #28a745;
+        }
+
+        .status-failed .status-dot {
+            background: #dc3545;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .payment-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .payment-item {
+            background: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #dee2e6;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .payment-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .payment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .payment-details {
+            margin-bottom: 8px;
+        }
+
+        .payment-description {
+            font-weight: 500;
+            color: #495057;
+            margin-bottom: 4px;
+        }
+
+        .payment-users {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+
+        .payment-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .payment-item.completed {
+            border-left-color: #28a745;
+        }
+
+        .payment-item.failed {
+            border-left-color: #dc3545;
+        }
+
+        .payment-item.processing {
+            border-left-color: #17a2b8;
+        }
+
+        .payment-item.pending {
+            border-left-color: #ffc107;
+        }
+
+        .payment-id {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 5px;
+        }
+
+        .payment-amount {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #28a745;
+            margin-bottom: 5px;
+        }
+
+        .payment-status {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .payment-time {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            z-index: 1000;
+        }
+
+        .connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .btn-refresh {
+            background: #17a2b8;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-refresh:hover {
+            background: #138496;
+        }
+
+        .payment-stats {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #e9ecef;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .stat-number.pending {
+            color: #ffc107;
+        }
+
+        .stat-number.processing {
+            color: #17a2b8;
+        }
+
+        .stat-number.completed {
+            color: #28a745;
+        }
+
+        .stat-number.failed {
+            color: #dc3545;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .payments-section h4 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 1.1rem;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+            
+            .panel-header {
+                flex-direction: column;
+                gap: 10px;
+                align-items: stretch;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">
+        Connecting...
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Payment System</h1>
+            <p>Non-Blocking Architecture with Kafka & WebSockets</p>
+        </div>
+
+        <div class="content">
+            <div class="payment-form">
+                <h3>Create Payment</h3>
+                <form id="paymentForm">
+                    <div class="form-group">
+                        <label for="userId">User ID</label>
+                        <input type="text" id="userId" value="user123" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="merchantId">Merchant ID</label>
+                        <input type="text" id="merchantId" value="merchant456" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="amount">Amount</label>
+                        <input type="number" id="amount" step="0.01" min="0.01" value="100.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="currency">Currency</label>
+                        <select id="currency" required>
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" rows="3" placeholder="Payment description...">Online purchase</textarea>
+                    </div>
+                    <button type="submit" class="btn" id="submitBtn">
+                        💳 Process Payment
+                    </button>
+                </form>
+            </div>
+
+            <div class="status-panel">
+                <div class="panel-header">
+                    <h3>Payment Dashboard</h3>
+                    <button id="refreshBtn" class="btn-refresh" onclick="paymentSystem.loadAllPayments()">
+                        🔄 Refresh
+                    </button>
+                </div>
+                
+                <div id="paymentStats" class="payment-stats">
+                    <!-- Stats will be loaded here -->
+                </div>
+                
+                <div id="currentStatus" class="status-indicator status-pending" style="display: none;">
+                    <div class="status-dot"></div>
+                    <span id="statusText">Waiting for payment...</span>
+                </div>
+                
+                <div id="connectionInfo" style="margin-bottom: 15px; padding: 10px; background: #e3f2fd; border-radius: 5px; font-size: 0.9rem; color: #1976d2;">
+                    <strong>Real-time Status:</strong> <span id="connectionText">Connecting to WebSocket...</span>
+                </div>
+                
+                <div class="payments-section">
+                    <h4>All Payments</h4>
+                    <div id="paymentList" class="payment-list">
+                        <p style="text-align: center; color: #6c757d; padding: 20px;">
+                            Loading payments...
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script>
+        class PaymentSystem {
+            constructor() {
+                this.stompClient = null;
+                this.payments = new Map();
+                this.currentPaymentId = null;
+                this.currentUserId = 'user123'; // Default user ID
+                this.init();
+            }
+
+            init() {
+                this.setupWebSocket();
+                this.setupForm();
+                this.loadAllPayments();
+                this.loadPaymentStats();
+            }
+
+            setupWebSocket() {
+                const socket = new SockJS('http://localhost:8081/ws');
+                this.stompClient = new StompJs.Client({
+                    webSocketFactory: () => socket,
+                    debug: (str) => console.log(str),
+                    reconnectDelay: 5000,
+                    heartbeatIncoming: 4000,
+                    heartbeatOutgoing: 4000,
+                });
+
+                this.stompClient.onConnect = (frame) => {
+                    console.log('Connected: ' + frame);
+                    this.updateConnectionStatus(true);
+                    
+                    // Subscribe to payment updates for the current user
+                    this.stompClient.subscribe(`/topic/payments/${this.currentUserId}`, (message) => {
+                        const payment = JSON.parse(message.body);
+                        this.updatePaymentStatus(payment);
+                    });
+                    
+                    // Subscribe to global payment updates (for admin view)
+                    this.stompClient.subscribe('/topic/payments/all', (message) => {
+                        const payment = JSON.parse(message.body);
+                        this.updatePaymentStatus(payment);
+                    });
+                };
+
+                this.stompClient.onStompError = (frame) => {
+                    console.error('Broker reported error: ' + frame.headers['message']);
+                    console.error('Additional details: ' + frame.body);
+                    this.updateConnectionStatus(false);
+                };
+
+                this.stompClient.activate();
+            }
+
+            setupForm() {
+                document.getElementById('paymentForm').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.submitPayment();
+                });
+            }
+
+            async submitPayment() {
+                const formData = {
+                    userId: document.getElementById('userId').value,
+                    merchantId: document.getElementById('merchantId').value,
+                    amount: parseFloat(document.getElementById('amount').value),
+                    currency: document.getElementById('currency').value,
+                    description: document.getElementById('description').value
+                };
+
+                const submitBtn = document.getElementById('submitBtn');
+                submitBtn.disabled = true;
+                submitBtn.className = 'btn loading';
+                submitBtn.textContent = 'Processing...';
+
+                try {
+                    const response = await fetch('http://localhost:8081/api/payments', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(formData)
+                    });
+
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        this.currentPaymentId = result.id;
+                        this.showCurrentStatus(result.status, result.message);
+                        this.addPaymentToList(result.id, formData.amount, formData.currency, result.status);
+                    } else {
+                        alert('Error: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Failed to submit payment');
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.className = 'btn';
+                    submitBtn.textContent = '💳 Process Payment';
+                }
+            }
+
+            updatePaymentStatus(payment) {
+                console.log('Payment update received:', payment);
+                
+                if (payment.id === this.currentPaymentId) {
+                    this.showCurrentStatus(payment.status, this.getStatusMessage(payment.status));
+                }
+                
+                this.updatePaymentInList(payment);
+                this.updatePaymentStats();
+            }
+
+            async loadAllPayments() {
+                try {
+                    const response = await fetch('http://localhost:8081/api/payments?page=0&size=50');
+                    if (response.ok) {
+                        const payments = await response.json();
+                        this.displayAllPayments(payments);
+                    } else {
+                        console.error('Failed to load payments:', response.status);
+                    }
+                } catch (error) {
+                    console.error('Error loading payments:', error);
+                }
+            }
+
+            async loadPaymentStats() {
+                try {
+                    const response = await fetch('http://localhost:8081/api/payments/stats');
+                    if (response.ok) {
+                        const stats = await response.json();
+                        this.displayPaymentStats(stats);
+                    }
+                } catch (error) {
+                    console.error('Error loading payment stats:', error);
+                }
+            }
+
+            displayAllPayments(payments) {
+                const paymentList = document.getElementById('paymentList');
+                
+                // Clear existing payments
+                paymentList.innerHTML = '';
+                
+                if (payments.length === 0) {
+                    paymentList.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">No payments found. Create a payment to see real-time updates!</p>';
+                    return;
+                }
+
+                // Sort payments by creation time (newest first)
+                payments.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
+
+                payments.forEach(payment => {
+                    this.addPaymentToList(payment.id, payment.amount, payment.currency, payment.status, payment);
+                });
+            }
+
+            displayPaymentStats(stats) {
+                const statsElement = document.getElementById('paymentStats');
+                if (statsElement) {
+                    statsElement.innerHTML = `
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-number">${stats.totalPayments || 0}</div>
+                                <div class="stat-label">Total</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number pending">${stats.pendingPayments || 0}</div>
+                                <div class="stat-label">Pending</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number processing">${stats.processingPayments || 0}</div>
+                                <div class="stat-label">Processing</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number completed">${stats.completedPayments || 0}</div>
+                                <div class="stat-label">Completed</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number failed">${stats.failedPayments || 0}</div>
+                                <div class="stat-label">Failed</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            updatePaymentStats() {
+                // Reload stats when payments are updated
+                this.loadPaymentStats();
+            }
+
+            showCurrentStatus(status, message) {
+                const statusDiv = document.getElementById('currentStatus');
+                const statusText = document.getElementById('statusText');
+                
+                statusDiv.style.display = 'flex';
+                statusDiv.className = `status-indicator status-${status.toLowerCase()}`;
+                statusText.textContent = message;
+            }
+
+            addPaymentToList(id, amount, currency, status, fullPayment = null) {
+                const paymentList = document.getElementById('paymentList');
+                
+                // Remove "no payments" message if it exists
+                const noPaymentsMsg = paymentList.querySelector('p');
+                if (noPaymentsMsg) {
+                    noPaymentsMsg.remove();
+                }
+
+                // Check if payment already exists
+                const existingItem = document.getElementById(`payment-${id}`);
+                if (existingItem) {
+                    this.updatePaymentInList(fullPayment || { id, amount, currency, status });
+                    return;
+                }
+
+                const paymentItem = document.createElement('div');
+                paymentItem.className = `payment-item ${status.toLowerCase()}`;
+                paymentItem.id = `payment-${id}`;
+                
+                const createdAt = fullPayment?.createdAt || fullPayment?.timestamp || new Date();
+                const processedAt = fullPayment?.processedAt;
+                const description = fullPayment?.description || 'Payment';
+                const userId = fullPayment?.userId || 'Unknown';
+                const merchantId = fullPayment?.merchantId || 'Unknown';
+                
+                paymentItem.innerHTML = `
+                    <div class="payment-header">
+                        <div class="payment-id">${id.substring(0, 8)}...</div>
+                        <div class="payment-amount">${currency} ${amount.toFixed(2)}</div>
+                    </div>
+                    <div class="payment-details">
+                        <div class="payment-description">${description}</div>
+                        <div class="payment-users">User: ${userId} → Merchant: ${merchantId}</div>
+                    </div>
+                    <div class="payment-footer">
+                        <div class="payment-status">${status}</div>
+                        <div class="payment-time">
+                            ${processedAt ? `Processed: ${new Date(processedAt).toLocaleTimeString()}` : `Created: ${new Date(createdAt).toLocaleTimeString()}`}
+                        </div>
+                    </div>
+                `;
+
+                paymentList.insertBefore(paymentItem, paymentList.firstChild);
+                this.payments.set(id, { amount, currency, status, fullPayment });
+            }
+
+            updatePaymentInList(payment) {
+                const paymentItem = document.getElementById(`payment-${payment.id}`);
+                if (paymentItem) {
+                    paymentItem.className = `payment-item ${payment.status.toLowerCase()}`;
+                    
+                    const statusElement = paymentItem.querySelector('.payment-status');
+                    if (statusElement) {
+                        statusElement.textContent = payment.status;
+                    }
+                    
+                    const timeElement = paymentItem.querySelector('.payment-time');
+                    if (timeElement) {
+                        if (payment.processedAt) {
+                            timeElement.textContent = `Processed: ${new Date(payment.processedAt).toLocaleTimeString()}`;
+                        } else {
+                            const createdAt = payment.createdAt || payment.timestamp || new Date();
+                            timeElement.textContent = `Created: ${new Date(createdAt).toLocaleTimeString()}`;
+                        }
+                    }
+                    
+                    // Update stored payment data
+                    this.payments.set(payment.id, { 
+                        amount: payment.amount, 
+                        currency: payment.currency, 
+                        status: payment.status, 
+                        fullPayment: payment 
+                    });
+                }
+            }
+
+            getStatusMessage(status) {
+                const messages = {
+                    'PENDING': 'Payment received and queued for processing...',
+                    'PROCESSING': 'Payment is being processed...',
+                    'COMPLETED': 'Payment completed successfully!',
+                    'FAILED': 'Payment processing failed.',
+                    'CANCELLED': 'Payment was cancelled.'
+                };
+                return messages[status] || 'Unknown status';
+            }
+
+            updateConnectionStatus(connected) {
+                const statusDiv = document.getElementById('connectionStatus');
+                const connectionText = document.getElementById('connectionText');
+                
+                if (connected) {
+                    statusDiv.textContent = '🟢 Connected';
+                    statusDiv.className = 'connection-status connected';
+                    connectionText.textContent = 'Connected - Ready for real-time updates';
+                } else {
+                    statusDiv.textContent = '🔴 Disconnected';
+                    statusDiv.className = 'connection-status disconnected';
+                    connectionText.textContent = 'Disconnected - Trying to reconnect...';
+                }
+            }
+        }
+
+        // Initialize the payment system when the page loads
+        let paymentSystem;
+        document.addEventListener('DOMContentLoaded', () => {
+            paymentSystem = new PaymentSystem();
+        });
+    </script>
+</body>
+</html>

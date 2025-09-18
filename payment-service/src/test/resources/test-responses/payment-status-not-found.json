@@ -1,0 +1,6 @@
+{
+  "id": "non-existent-payment-id",
+  "status": "FAILED",
+  "message": "Payment not found",
+  "timestamp": "2025-09-18T14:00:00"
+}

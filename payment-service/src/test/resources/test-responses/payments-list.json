@@ -1,0 +1,26 @@
+[
+  {
+    "id": "test-payment-id-123",
+    "userId": "test-user-123",
+    "merchantId": "test-merchant-456",
+    "amount": 100.50,
+    "currency": "USD",
+    "description": "Test payment 1",
+    "status": "COMPLETED",
+    "createdAt": "2025-09-18T14:00:00",
+    "processedAt": "2025-09-18T14:00:05",
+    "errorMessage": null
+  },
+  {
+    "id": "test-payment-id-456",
+    "userId": "test-user-456",
+    "merchantId": "test-merchant-789",
+    "amount": 250.75,
+    "currency": "EUR",
+    "description": "Test payment 2",
+    "status": "PENDING",
+    "createdAt": "2025-09-18T14:01:00",
+    "processedAt": null,
+    "errorMessage": null
+  }
+]

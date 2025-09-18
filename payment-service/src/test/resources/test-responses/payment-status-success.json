@@ -1,0 +1,6 @@
+{
+  "id": "test-payment-id-123",
+  "status": "COMPLETED",
+  "message": "Payment status retrieved successfully",
+  "timestamp": "2025-09-18T14:00:00"
+}

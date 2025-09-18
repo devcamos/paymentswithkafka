@@ -1,0 +1,7 @@
+{
+  "totalPayments": 5,
+  "pendingPayments": 1,
+  "processingPayments": 0,
+  "completedPayments": 3,
+  "failedPayments": 1
+}

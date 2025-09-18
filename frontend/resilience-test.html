@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Resilience Testing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status.healthy { background-color: #d4edda; color: #155724; }
+        .status.degraded { background-color: #fff3cd; color: #856404; }
+        .status.unhealthy { background-color: #f8d7da; color: #721c24; }
+        .connection.online { background-color: #d4edda; color: #155724; }
+        .connection.offline { background-color: #f8d7da; color: #721c24; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .payment-item {
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #f8f9fa;
+        }
+        .payment-item.completed { border-left: 4px solid #28a745; }
+        .payment-item.failed { border-left: 4px solid #dc3545; }
+        .payment-item.processing { border-left: 4px solid #ffc107; }
+        .payment-item.pending { border-left: 4px solid #17a2b8; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Payment Service Resilience Testing</h1>
+    
+    <!-- System Status -->
+    <div class="container">
+        <h2>System Status</h2>
+        <div id="service-status" class="status">Checking...</div>
+        <div id="connection-status" class="connection">Checking...</div>
+        <button onclick="checkHealth()">Check Health</button>
+        <button onclick="checkDetailedHealth()">Detailed Health</button>
+    </div>
+
+    <!-- Payment Creation -->
+    <div class="container">
+        <h2>Payment Testing</h2>
+        <button onclick="createPayment()">Create Test Payment</button>
+        <button onclick="createMultiplePayments()">Create 5 Payments</button>
+        <button onclick="simulateKafkaFailure()">Simulate Kafka Failure</button>
+        <button onclick="clearPayments()">Clear All Payments</button>
+    </div>
+
+    <!-- Statistics -->
+    <div class="container">
+        <h2>Payment Statistics</h2>
+        <div class="stats" id="stats-container">
+            <div class="stat-card">
+                <div class="stat-number" id="total-payments">0</div>
+                <div class="stat-label">Total Payments</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="completed-payments">0</div>
+                <div class="stat-label">Completed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="processing-payments">0</div>
+                <div class="stat-label">Processing</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="failed-payments">0</div>
+                <div class="stat-label">Failed</div>
+            </div>
+        </div>
+        <button onclick="updateStats()">Refresh Stats</button>
+    </div>
+
+    <!-- Payment List -->
+    <div class="container">
+        <h2>Recent Payments</h2>
+        <div id="payments-list"></div>
+        <button onclick="loadPayments()">Load Payments</button>
+    </div>
+
+    <!-- Test Log -->
+    <div class="container">
+        <h2>Test Log</h2>
+        <div id="log" class="log"></div>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <!-- Include WebSocket and Stomp libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+
+    <script>
+        // Global variables
+        let paymentService = null;
+        let stompClient = null;
+        let isConnected = false;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeService();
+            startPeriodicUpdates();
+        });
+
+        // Initialize payment service
+        function initializeService() {
+            paymentService = new ProductionPaymentService();
+            log('Payment service initialized');
+        }
+
+        // Production Payment Service (simplified version)
+        class ProductionPaymentService {
+            constructor() {
+                this.baseUrl = 'http://localhost:8081/api/payments';
+                this.retryCount = 0;
+                this.maxRetries = 3;
+            }
+
+            async createPayment(paymentData) {
+                try {
+                    const response = await this.makeRequest('POST', '', paymentData);
+                    return response;
+                } catch (error) {
+                    log('Payment creation failed: ' + error.message, 'error');
+                    return {
+                        id: null,
+                        status: 'FAILED',
+                        message: 'Payment creation failed: ' + error.message
+                    };
+                }
+            }
+
+            async makeRequest(method, endpoint, data = null) {
+                const url = `${this.baseUrl}${endpoint}`;
+                const options = {
+                    method,
+                    headers: { 'Content-Type': 'application/json' }
+                };
+
+                if (data) {
+                    options.body = JSON.stringify(data);
+                }
+
+                const response = await fetch(url, options);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return await response.json();
+            }
+
+            async checkHealth() {
+                try {
+                    const response = await fetch(`${this.baseUrl}/health`);
+                    return response.ok;
+                } catch (error) {
+                    return false;
+                }
+            }
+
+            async getDetailedHealth() {
+                try {
+                    return await this.makeRequest('GET', '/health/detailed');
+                } catch (error) {
+                    return { status: 'ERROR', message: error.message };
+                }
+            }
+
+            async getPayments() {
+                try {
+                    return await this.makeRequest('GET', '');
+                } catch (error) {
+                    log('Failed to load payments: ' + error.message, 'error');
+                    return [];
+                }
+            }
+
+            async getStats() {
+                try {
+                    return await this.makeRequest('GET', '/stats');
+                } catch (error) {
+                    log('Failed to load stats: ' + error.message, 'error');
+                    return {};
+                }
+            }
+        }
+
+        // Test functions
+        async function createPayment() {
+            const paymentData = {
+                userId: 'user-' + Date.now(),
+                merchantId: 'merchant-456',
+                amount: (Math.random() * 100).toFixed(2),
+                currency: 'USD',
+                description: 'Resilience Test Payment'
+            };
+
+            log('Creating payment: ' + JSON.stringify(paymentData));
+            
+            const result = await paymentService.createPayment(paymentData);
+            
+            if (result.id) {
+                log('Payment created successfully: ' + result.id, 'success');
+                addPaymentToList(result);
+            } else {
+                log('Payment creation failed: ' + result.message, 'error');
+            }
+            
+            updateStats();
+        }
+
+        async function createMultiplePayments() {
+            log('Creating 5 test payments...');
+            for (let i = 0; i < 5; i++) {
+                await createPayment();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        async function simulateKafkaFailure() {
+            log('Simulating Kafka failure scenario...');
+            
+            // Create payments while "Kafka is down"
+            for (let i = 0; i < 3; i++) {
+                await createPayment();
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            
+            log('Kafka failure simulation completed');
+        }
+
+        async function checkHealth() {
+            const isHealthy = await paymentService.checkHealth();
+            const statusElement = document.getElementById('service-status');
+            
+            if (isHealthy) {
+                statusElement.textContent = 'Service is healthy';
+                statusElement.className = 'status healthy';
+                log('Health check: Service is healthy', 'success');
+            } else {
+                statusElement.textContent = 'Service is unhealthy';
+                statusElement.className = 'status unhealthy';
+                log('Health check: Service is unhealthy', 'error');
+            }
+        }
+
+        async function checkDetailedHealth() {
+            const health = await paymentService.getDetailedHealth();
+            log('Detailed health: ' + JSON.stringify(health, null, 2));
+            
+            const statusElement = document.getElementById('service-status');
+            statusElement.textContent = `Status: ${health.status}`;
+            statusElement.className = `status ${health.status.toLowerCase()}`;
+        }
+
+        async function loadPayments() {
+            const payments = await paymentService.getPayments();
+            const container = document.getElementById('payments-list');
+            
+            container.innerHTML = '';
+            
+            if (payments.length === 0) {
+                container.innerHTML = '<p>No payments found</p>';
+                return;
+            }
+            
+            payments.forEach(payment => {
+                addPaymentToList(payment);
+            });
+            
+            log(`Loaded ${payments.length} payments`);
+        }
+
+        function addPaymentToList(payment) {
+            const container = document.getElementById('payments-list');
+            const paymentElement = document.createElement('div');
+            paymentElement.className = `payment-item ${payment.status.toLowerCase()}`;
+            paymentElement.innerHTML = `
+                <strong>ID:</strong> ${payment.id}<br>
+                <strong>Status:</strong> ${payment.status}<br>
+                <strong>Amount:</strong> $${payment.amount || 'N/A'}<br>
+                <strong>User:</strong> ${payment.userId || 'N/A'}<br>
+                <strong>Merchant:</strong> ${payment.merchantId || 'N/A'}
+            `;
+            container.insertBefore(paymentElement, container.firstChild);
+        }
+
+        async function updateStats() {
+            const stats = await paymentService.getStats();
+            
+            document.getElementById('total-payments').textContent = stats.totalPayments || 0;
+            document.getElementById('completed-payments').textContent = stats.completedPayments || 0;
+            document.getElementById('processing-payments').textContent = stats.processingPayments || 0;
+            document.getElementById('failed-payments').textContent = stats.failedPayments || 0;
+        }
+
+        function clearPayments() {
+            document.getElementById('payments-list').innerHTML = '';
+            log('Payments list cleared');
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            
+            let className = '';
+            if (type === 'error') className = 'color: red;';
+            else if (type === 'success') className = 'color: green;';
+            else if (type === 'warning') className = 'color: orange;';
+            
+            logEntry.innerHTML = `<span style="color: #666;">[${timestamp}]</span> <span style="${className}">${message}</span>`;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function startPeriodicUpdates() {
+            // Update stats every 10 seconds
+            setInterval(updateStats, 10000);
+            
+            // Check health every 30 seconds
+            setInterval(checkHealth, 30000);
+            
+            // Load payments every 15 seconds
+            setInterval(loadPayments, 15000);
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', function() {
+            log('Resilience testing page loaded');
+            checkHealth();
+            loadPayments();
+            updateStats();
+        });
+    </script>
+</body>
+</html>
