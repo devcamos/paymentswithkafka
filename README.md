@@ -2,6 +2,12 @@
 
 A comprehensive monorepo demonstrating asynchronous payment processing using Spring Boot, Apache Kafka, and WebSockets. This project showcases non-blocking architecture patterns with real-time updates.
 
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.java.net/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Apache Kafka](https://img.shields.io/badge/Apache%20Kafka-7.4.0-blue.svg)](https://kafka.apache.org/)
+[![WebSocket](https://img.shields.io/badge/WebSocket-STOMP-yellow.svg)](https://spring.io/guides/gs/messaging-stomp-websocket/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](https://docs.docker.com/compose/)
+
 ## 🏗️ Architecture Overview
 
 ```
@@ -24,6 +30,24 @@ A comprehensive monorepo demonstrating asynchronous payment processing using Spr
                        └─────────────────┘
 ```
 
+## ✨ Key Features
+
+### 🔄 Non-Blocking Architecture
+- **Immediate Response**: Payment requests return instantly with a pending status
+- **Asynchronous Processing**: Kafka handles payment processing in the background
+- **Real-time Updates**: WebSocket provides live status updates to the frontend
+
+### 🌐 Real-time Communication
+- **User-Specific Updates**: `/topic/payments/{userId}` - Updates for specific users
+- **Global Updates**: `/topic/payments/all` - Updates for all connected clients
+- **Live Dashboard**: Real-time payment monitoring and statistics
+
+### 🛡️ Production-Ready Features
+- **Resilience Patterns**: Circuit breaker, retry logic, and fallback strategies
+- **Error Handling**: Comprehensive error handling and recovery mechanisms
+- **Monitoring**: Health checks, metrics, and system status monitoring
+- **Testing**: Comprehensive test suite with unit and integration tests
+
 ## 📁 Project Structure
 
 ```
@@ -32,74 +56,63 @@ paymentswithkafka/
 │   ├── src/main/java/
 │   │   └── com/example/demo/
 │   │       ├── controller/   # REST Controllers
-│   │       ├── service/      # Kafka Producer/Consumer
+│   │       ├── service/      # Kafka Producer/Consumer & Business Logic
 │   │       ├── model/        # Payment Models
 │   │       ├── dto/          # Data Transfer Objects
 │   │       └── config/       # WebSocket Configuration
 │   └── src/main/resources/
 │       └── application.properties
-├── frontend/                 # React-like Frontend
-│   └── index.html           # Single Page Application
+├── frontend/                 # Enhanced Frontend
+│   ├── index.html           # Payment Dashboard
+│   ├── payment-frontend.js  # Frontend Logic
+│   └── resilience-test.html # Resilience Testing UI
 ├── docker-compose.yml       # Multi-service Setup
 └── README.md
 ```
 
 ## 🚀 Quick Start
 
-### 1. Start All Services
+### Prerequisites
+- **Java 21**
+- **Maven 3.6+**
+- **Docker & Docker Compose**
 
+### 1. Clone the Repository
 ```bash
-# Start Kafka infrastructure and frontend
+git clone https://github.com/yourusername/paymentswithkafka.git
+cd paymentswithkafka
+```
+
+### 2. Start Infrastructure Services
+```bash
+# Start Kafka, Zookeeper, Kafka UI, and Frontend
 docker-compose up -d
 
 # Check service status
 docker-compose ps
 ```
 
-### 2. Run Payment Service
-
+### 3. Run Payment Service
 ```bash
 cd payment-service
 mvn spring-boot:run
 ```
 
-### 3. Access Applications
+### 4. Access Applications
+- **🎨 Frontend**: http://localhost:3000 - Interactive payment dashboard
+- **🔧 Payment API**: http://localhost:8081 - REST API endpoints  
+- **📊 Kafka UI**: http://localhost:8080 - Monitor Kafka topics and messages
+- **❤️ Health Check**: http://localhost:8081/api/payments/health
 
-- **Frontend**: http://localhost:3000 - Interactive payment interface
-- **Payment API**: http://localhost:8081 - REST API endpoints
-- **Kafka UI**: http://localhost:8080 - Kafka management interface
-- **API Health**: http://localhost:8081/api/payments/health
+## 🎯 Demo the Non-Blocking Behavior
 
-## 🎯 Key Features
-
-### Non-Blocking Architecture
-- **Immediate Response**: Payment requests return instantly with a pending status
-- **Asynchronous Processing**: Kafka handles payment processing in the background
-- **Real-time Updates**: WebSocket provides live status updates to the frontend
-
-### Payment Flow
-1. **Create Payment**: POST to `/api/payments` returns immediately
-2. **Queue Processing**: Payment is sent to Kafka for async processing
-3. **Status Updates**: WebSocket broadcasts status changes in real-time
-4. **Event Publishing**: Payment events are published to Kafka topics
-
-### Technology Stack
-- **Backend**: Spring Boot 3.5.5, Java 21
-- **Message Queue**: Apache Kafka 7.4.0
-- **Real-time**: WebSocket with STOMP
-- **Frontend**: Vanilla JavaScript with SockJS
-- **Infrastructure**: Docker Compose
-
-## 🔧 Services & Ports
-
-| Service | Port | Description |
-|---------|------|-------------|
-| Frontend | 3000 | Payment UI with real-time updates |
-| Payment API | 8081 | Spring Boot REST API |
-| Kafka UI | 8080 | Kafka management interface |
-| Kafka Broker | 9092 | Message broker |
-| Zookeeper | 2181 | Kafka coordination |
-| Schema Registry | 8082 | Avro schema management |
+1. **Open Frontend**: Navigate to http://localhost:3000
+2. **Create Payment**: Fill out the form and submit
+3. **Observe**: 
+   - ✅ **Immediate Response**: You'll get a "PENDING" status instantly
+   - 🔄 **Real-time Updates**: Watch the status change via WebSocket
+   - ⏱️ **Background Processing**: Payment processes asynchronously (1-5 seconds)
+   - ✅ **Final Status**: Eventually shows "COMPLETED" or "FAILED"
 
 ## 📡 API Endpoints
 
@@ -122,6 +135,21 @@ GET http://localhost:8081/api/payments/health
 
 # Payment Status
 GET http://localhost:8081/api/payments/status/{paymentId}
+
+# Get All Payments
+GET http://localhost:8081/api/payments?page=0&size=10
+
+# Payment Statistics
+GET http://localhost:8081/api/payments/stats
+```
+
+### Resilience API
+```bash
+# Create Payment with Resilience Patterns
+POST http://localhost:8081/api/payments/resilience
+
+# Detailed Health Check
+GET http://localhost:8081/api/payments/resilience/health/detailed
 ```
 
 ### WebSocket
@@ -130,22 +158,48 @@ GET http://localhost:8081/api/payments/status/{paymentId}
 const socket = new SockJS('http://localhost:8081/ws');
 const stompClient = new StompJs.Client({webSocketFactory: () => socket});
 
-// Subscribe to payment updates
+// Subscribe to user-specific updates
 stompClient.subscribe('/topic/payments/user123', (message) => {
     const payment = JSON.parse(message.body);
     // Handle real-time payment updates
 });
+
+// Subscribe to global updates
+stompClient.subscribe('/topic/payments/all', (message) => {
+    const payment = JSON.parse(message.body);
+    // Handle global payment updates
+});
 ```
 
-## 🎮 Demo the Non-Blocking Behavior
+## 🔧 Services & Ports
 
-1. **Open Frontend**: Navigate to http://localhost:3000
-2. **Create Payment**: Fill out the form and submit
-3. **Observe**: 
-   - Immediate response with "PENDING" status
-   - Real-time status updates via WebSocket
-   - Background processing simulation (1-5 seconds)
-   - Final status: COMPLETED or FAILED
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 3000 | Payment UI with real-time updates |
+| Payment API | 8081 | Spring Boot REST API |
+| Kafka UI | 8080 | Kafka management interface |
+| Kafka Broker | 9092 | Message broker |
+| Zookeeper | 2181 | Kafka coordination |
+| Schema Registry | 8082 | Avro schema management |
+
+## 🛠️ Development
+
+### Running Tests
+```bash
+cd payment-service
+mvn test
+```
+
+### Building the Application
+```bash
+cd payment-service
+mvn clean package
+```
+
+### Docker Build
+```bash
+docker build -t payment-service ./payment-service
+```
 
 ## 🔍 Monitoring & Debugging
 
@@ -169,24 +223,6 @@ docker-compose logs -f kafka
 # All services
 docker-compose logs -f
 ```
-
-### Kafka UI
-- Access http://localhost:8080
-- Monitor topics, consumers, and messages
-- View message content and headers
-
-## 🛠️ Development
-
-### Adding New Features
-1. **Models**: Add to `payment-service/src/main/java/com/example/demo/model/`
-2. **Controllers**: Add to `payment-service/src/main/java/com/example/demo/controller/`
-3. **Services**: Add to `payment-service/src/main/java/com/example/demo/service/`
-4. **Frontend**: Modify `frontend/index.html`
-
-### Configuration
-- **Kafka**: `payment-service/src/main/resources/application.properties`
-- **Docker**: `docker-compose.yml`
-- **Topics**: Auto-created, configurable in application.properties
 
 ## 🚨 Troubleshooting
 
@@ -218,16 +254,28 @@ This project demonstrates:
 - **Microservices**: Separate frontend and backend services
 - **Container Orchestration**: Docker Compose for multi-service setup
 - **Message Patterns**: Producer/Consumer with Kafka
-- **WebSocket Integration**: Real-time bidirectional communication
+- **Resilience Patterns**: Circuit breaker, retry, and fallback strategies
+- **Production Readiness**: Monitoring, health checks, and error handling
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with `docker-compose up -d`
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
 This project is for educational purposes demonstrating non-blocking architecture patterns.
+
+## 🙏 Acknowledgments
+
+- Spring Boot team for the excellent framework
+- Apache Kafka team for the robust messaging system
+- Docker team for containerization tools
+- All contributors and testers
+
+---
+
+**Happy Coding! 🚀**
