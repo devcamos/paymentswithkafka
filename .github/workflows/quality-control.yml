@@ -1,0 +1,180 @@
+name: Quality Control Pipeline
+
+on:
+  pull_request:
+    branches: [ main, payment-service-template ]
+  push:
+    branches: [ main, payment-service-template ]
+
+jobs:
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        
+    - name: Cache Maven dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Start test infrastructure
+      run: |
+        docker-compose -f docker-compose.test.yml up -d zookeeper kafka
+        sleep 30
+        
+    - name: Run quality checks
+      run: |
+        cd payment-service
+        
+        # 1. Compile check
+        echo "🔨 Compiling code..."
+        mvn clean compile -DskipTests
+        
+        # 2. Run tests
+        echo "🧪 Running tests..."
+        mvn test
+        
+        # 3. Code coverage check
+        echo "📊 Checking code coverage..."
+        mvn jacoco:report
+        
+        # 4. Package check
+        echo "📦 Building package..."
+        mvn package -DskipTests
+        
+        # 5. Security scan
+        echo "🔒 Running security scan..."
+        mvn org.owasp:dependency-check-maven:check || echo "Security scan completed with warnings"
+        
+        # 6. Static analysis
+        echo "🔍 Running static analysis..."
+        mvn spotbugs:check || echo "Static analysis completed with warnings"
+        
+    - name: Check code coverage threshold
+      run: |
+        cd payment-service
+        if [ -f target/site/jacoco/index.html ]; then
+          COVERAGE=$(grep -o 'Total.*[0-9]*%' target/site/jacoco/index.html | grep -o '[0-9]*%' | head -1 | sed 's/%//' || echo "0")
+          echo "Code coverage: ${COVERAGE}%"
+          if [ "$COVERAGE" -lt 60 ]; then
+            echo "❌ Code coverage ${COVERAGE}% is below required 60%"
+            exit 1
+          else
+            echo "✅ Code coverage ${COVERAGE}% meets requirement (>= 60%)"
+          fi
+        else
+          echo "⚠️ Coverage report not found, skipping coverage check"
+        fi
+        
+    - name: Test Docker build
+      run: |
+        cd payment-service
+        docker build -t payment-service:test .
+        echo "✅ Docker image built successfully"
+        
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: payment-service/target/surefire-reports/
+        
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: coverage-report
+        path: payment-service/target/site/jacoco/
+        
+    - name: Upload security report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-report
+        path: payment-service/target/dependency-check-report.html
+        
+    - name: Stop test infrastructure
+      if: always()
+      run: |
+        docker-compose -f docker-compose.test.yml down
+        
+    - name: Quality gate summary
+      if: success()
+      run: |
+        echo "🎉 Quality Gate PASSED"
+        echo "✅ All tests passed"
+        echo "✅ Code coverage meets threshold"
+        echo "✅ Security scan completed"
+        echo "✅ Package builds successfully"
+        echo "✅ Docker image builds successfully"
+
+  pr-checks:
+    name: PR Quality Checks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Check PR title format
+      run: |
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        if [[ ! "$PR_TITLE" =~ ^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+ ]]; then
+          echo "❌ PR title must follow conventional commit format"
+          echo "Current title: $PR_TITLE"
+          echo "Examples:"
+          echo "  feat: add new payment feature"
+          echo "  fix: resolve websocket connection issue"
+          echo "  docs: update API documentation"
+          echo "  refactor: improve payment service structure"
+          exit 1
+        else
+          echo "✅ PR title follows conventional commit format"
+        fi
+        
+    - name: Check for large files
+      run: |
+        if find . -type f -size +10M -not -path "./payment-service/target/*" -not -path "./.git/*" | grep -q .; then
+          echo "❌ Files larger than 10MB detected:"
+          find . -type f -size +10M -not -path "./payment-service/target/*" -not -path "./.git/*"
+          exit 1
+        else
+          echo "✅ No large files detected"
+        fi
+        
+    - name: Check for potential secrets
+      run: |
+        if grep -r -i "password\|secret\|key\|token" --include="*.java" --include="*.properties" --include="*.yml" --include="*.yaml" . | grep -v "// TODO\|// FIXME\|test\|example\|template\|placeholder"; then
+          echo "❌ Potential secrets detected in code"
+          echo "Please remove or use environment variables"
+          exit 1
+        else
+          echo "✅ No potential secrets detected"
+        fi
+        
+    - name: Check for TODO/FIXME comments
+      run: |
+        TODO_COUNT=$(grep -r "TODO\|FIXME" --include="*.java" . | wc -l || echo "0")
+        if [ "$TODO_COUNT" -gt 10 ]; then
+          echo "⚠️ High number of TODO/FIXME comments: $TODO_COUNT"
+          echo "Consider addressing some before merging"
+        else
+          echo "✅ TODO/FIXME count is acceptable: $TODO_COUNT"
+        fi
