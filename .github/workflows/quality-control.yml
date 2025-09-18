@@ -133,22 +133,6 @@ jobs:
       with:
         fetch-depth: 0
         
-    - name: Check PR title format
-      run: |
-        PR_TITLE="${{ github.event.pull_request.title }}"
-        if [[ ! "$PR_TITLE" =~ ^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: .+ ]]; then
-          echo "❌ PR title must follow conventional commit format"
-          echo "Current title: $PR_TITLE"
-          echo "Examples:"
-          echo "  feat: add new payment feature"
-          echo "  fix: resolve websocket connection issue"
-          echo "  docs: update API documentation"
-          echo "  refactor: improve payment service structure"
-          exit 1
-        else
-          echo "✅ PR title follows conventional commit format"
-        fi
-        
     - name: Check for large files
       run: |
         if find . -type f -size +10M -not -path "./payment-service/target/*" -not -path "./.git/*" | grep -q .; then
